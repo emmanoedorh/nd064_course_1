@@ -1,4 +1,6 @@
+import logging
 import sqlite3
+import sys
 
 from flask import Flask, jsonify, json, render_template, request, url_for, redirect, flash
 from werkzeug.exceptions import abort
@@ -16,6 +18,7 @@ def get_post(post_id):
     post = connection.execute('SELECT * FROM posts WHERE id = ?',
                         (post_id,)).fetchone()
     connection.close()
+    app.logger.info('Article "%s" retrieved!', post['title'] if post else 'None')
     return post
 
 # Define the Flask application
@@ -36,6 +39,7 @@ def index():
 def post(post_id):
     post = get_post(post_id)
     if post is None:
+      app.logger.error('Article with id "%s" not found!', post_id)
       return render_template('404.html'), 404
     else:
       return render_template('post.html', post=post)
@@ -43,6 +47,7 @@ def post(post_id):
 # Define the About Us page
 @app.route('/about')
 def about():
+    app.logger.info('About Us page retrieved')
     return render_template('about.html')
 
 # Define the post creation functionality 
@@ -60,11 +65,39 @@ def create():
                          (title, content))
             connection.commit()
             connection.close()
+            app.logger.info('Article "%s" created!', title)
 
             return redirect(url_for('index'))
 
     return render_template('create.html')
 
+@app.route('/healthz')
+def healthz():
+    response = app.response_class(
+        response=json.dumps({"result": "OK - healthy"}),
+        status=200,
+        mimetype='application/json'
+    )
+    return response
+
+@app.route('/metrics')
+def metrics():
+    connection = get_db_connection()
+    post_count = connection.execute('SELECT COUNT(*) FROM posts').fetchone()[0]
+    connection.close()
+    response = app.response_class(
+        response=json.dumps({"db_connection_count": 1, "post_count": post_count}),
+        status=200,
+        mimetype='application/json'
+    )
+    return response
+
+
 # start the application on port 3111
 if __name__ == "__main__":
+   # setup logging
+   stdout_log_handler = logging.StreamHandler(sys.stdout)
+   stderr_log_handler = logging.StreamHandler(sys.stderr)
+   handlers = [stdout_log_handler, stderr_log_handler]
+   logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', handlers=handlers)
    app.run(host='0.0.0.0', port='3111')
